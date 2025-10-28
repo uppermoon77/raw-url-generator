@@ -1,0 +1,75 @@
+name: Build Raw URLs (All Repos)
+
+on:
+  schedule:
+    # jalan tiap 10 menit (UTC). WIB = UTC+7
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "generate_all_repos_raw_urls.py"
+      - ".github/workflows/raw-urls.yml"
+
+permissions:
+  contents: write  # perlu untuk commit hasil
+
+env:
+  OWNER: "uppermoon77"
+  OUT_FILE: "data/uppermoon77_all_raw.csv"
+  WORKERS: "10"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas openpyxl
+
+      - name: Generate Raw URLs (seluruh repos)
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}  # opsional: PAT untuk include private repos
+        run: |
+          set -e
+          mkdir -p "$(dirname "$OUT_FILE")"
+
+          TOKEN_ARG=""
+          if [ -n "${GH_PAT:-}" ]; then
+            TOKEN_ARG="--token ${GH_PAT}"
+            echo "Menggunakan GH_PAT: private repos akan ikut diproses."
+          else
+            echo "Tidak ada GH_PAT: hanya PUBLIC repos yang diproses."
+          fi
+
+          python generate_all_repos_raw_urls.py "$OWNER" $TOKEN_ARG --out "$OUT_FILE" --workers "$WORKERS"
+
+      - name: Commit & Push if changed
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${OUT_FILE}" "${OUT_FILE%.csv}.xlsx" || true
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan."
+          else
+            git commit -m "Auto: refresh raw URLs for ${{ env.OWNER }} (scheduled)"
+            git push
+          fi
+
+      - name: Upload artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-urls-${{ env.OWNER }}
+          path: |
+            ${{ env.OUT_FILE }}
+            ${{ env.OUT_FILE && env.OUT_FILE != '' && format('{0}', env.OUT_FILE).replace('.csv','.xlsx') || '' }}
