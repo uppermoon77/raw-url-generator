@@ -2,8 +2,7 @@ name: Build Raw URLs (All Repos)
 
 on:
   schedule:
-    # jalan tiap 10 menit (UTC). WIB = UTC+7
-    - cron: "*/10 * * * *"
+    - cron: "*/10 * * * *"   # tiap 10 menit (UTC)
   workflow_dispatch:
   push:
     paths:
@@ -11,7 +10,7 @@ on:
       - ".github/workflows/raw-urls.yml"
 
 permissions:
-  contents: write  # perlu untuk commit hasil
+  contents: write
 
 env:
   OWNER: "uppermoon77"
@@ -38,7 +37,7 @@ jobs:
 
       - name: Generate Raw URLs (seluruh repos)
         env:
-          GH_PAT: ${{ secrets.GH_PAT }}  # opsional: PAT untuk include private repos
+          GH_PAT: ${{ secrets.GH_PAT }}  # opsional: untuk private repos
         run: |
           set -e
           mkdir -p "$(dirname "$OUT_FILE")"
@@ -46,12 +45,15 @@ jobs:
           TOKEN_ARG=""
           if [ -n "${GH_PAT:-}" ]; then
             TOKEN_ARG="--token ${GH_PAT}"
-            echo "Menggunakan GH_PAT: private repos akan ikut diproses."
+            echo "Menggunakan GH_PAT (private repos ikut)."
           else
-            echo "Tidak ada GH_PAT: hanya PUBLIC repos yang diproses."
+            echo "Tanpa GH_PAT: hanya public repos."
           fi
 
           python generate_all_repos_raw_urls.py "$OWNER" $TOKEN_ARG --out "$OUT_FILE" --workers "$WORKERS"
+
+          # simpan nama XLSX ke env agar dipakai step lain
+          echo "OUT_FILE_XLSX=${OUT_FILE%.csv}.xlsx" >> "$GITHUB_ENV"
 
       - name: Commit & Push if changed
         run: |
@@ -62,7 +64,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Tidak ada perubahan."
           else
-            git commit -m "Auto: refresh raw URLs for ${{ env.OWNER }} (scheduled)"
+            git commit -m "Auto: refresh raw URLs for ${{ env.OWNER }}"
             git push
           fi
 
@@ -72,4 +74,4 @@ jobs:
           name: raw-urls-${{ env.OWNER }}
           path: |
             ${{ env.OUT_FILE }}
-            ${{ env.OUT_FILE && env.OUT_FILE != '' && format('{0}', env.OUT_FILE).replace('.csv','.xlsx') || '' }}
+            ${{ env.OUT_FILE_XLSX }}
